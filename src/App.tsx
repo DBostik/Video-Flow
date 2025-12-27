@@ -630,9 +630,9 @@ const App = () => {
         </div>
       </header>
 
-      {/* BOARD (Snap Scrolling) */}
-      <main className="flex-1 overflow-hidden w-full">
-        <div className="h-full w-full overflow-x-auto snap-x snap-mandatory flex gap-4 p-4 md:p-6 md:snap-none">
+      {/* BOARD (Snap Scrolling with Dark Scrollbar Fix) */}
+      <main className="flex-1 w-full flex flex-col overflow-hidden">
+        <div className="flex-1 w-full overflow-x-auto snap-x snap-mandatory flex gap-4 p-4 md:p-6 md:snap-none dark:[color-scheme:dark]">
             <DndContext sensors={sensors} collisionDetection={closestCorners} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragStart={(e) => setActiveTask(e.active.data.current?.task)}>
                 {filteredColumns.map(col => (
                     <KanbanColumn key={col.id} column={col} onAddTask={openNewTaskModal} onEditTask={openEditTaskModal} onToggleQuickCheck={handleToggleQuickCheck} />
