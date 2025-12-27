@@ -200,7 +200,7 @@ const SortableTaskCard = ({ task, onClick, onToggleQuickCheck }: { task: Task; o
   );
 };
 
-// 2. The Column (Updated for Mobile Snapping)
+// 2. The Column (Optimized for Snap)
 const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { column: ColumnType, onAddTask: () => void, onEditTask: (t: Task) => void, onToggleQuickCheck: (id: string, field: 'hasOutline' | 'hasScript') => void }) => {
   const { setNodeRef } = useSortable({
     id: column.id,
@@ -208,8 +208,7 @@ const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { c
   });
 
   return (
-    // UPDATED: min-w-[85vw] for mobile creates a "Carousel" feel. snap-center locks it in place.
-    <div className="flex flex-col min-w-[85vw] md:min-w-[320px] max-w-[85vw] md:max-w-[320px] h-full snap-center">
+    <div className="flex flex-col min-w-[85vw] md:min-w-[320px] max-w-[85vw] md:max-w-[320px] h-full snap-center shrink-0">
       <div className="flex items-center justify-between mb-4 px-2">
         <div className="flex items-center gap-2">
            <h2 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide">{column.title}</h2>
@@ -238,7 +237,7 @@ const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { c
   );
 };
 
-// 3. Edit/Create Modal (Updated for Mobile Stacking)
+// 3. Edit/Create Modal
 const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | null, isOpen: boolean, onClose: () => void, onSave: (t: Task) => void, onDelete: (id: string) => void }) => {
   if (!isOpen) return null;
 
@@ -305,10 +304,10 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X size={24} /></button>
         </div>
 
-        {/* Modal Body (Responsive Grid) */}
+        {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-             {/* LEFT COLUMN (Notes & Subtasks) */}
+             {/* LEFT COLUMN */}
              <div className="md:col-span-2 space-y-6 order-2 md:order-1">
                 <div>
                    <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
@@ -364,7 +363,7 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
                 </div>
              </div>
 
-             {/* RIGHT COLUMN (Dates, Links - Stacks on top on mobile) */}
+             {/* RIGHT COLUMN */}
              <div className="space-y-6 order-1 md:order-2">
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Due Date</label>
@@ -558,70 +557,76 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      {/* HEADER (Updated for Mobile Stacking) */}
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-50 shadow-sm transition-colors duration-200 gap-3 md:gap-0">
-        
-        {/* Top Row: Logo + Dark Toggle (Mobile) */}
-        <div className="flex items-center justify-between w-full md:w-auto">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 md:w-10 md:h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md">
-              <Clapperboard size={20} className="md:w-6 md:h-6" />
+      {/* HEADER (Redesigned for Mobile) */}
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 sticky top-0 z-50 shadow-sm transition-colors duration-200">
+        <div className="flex flex-col gap-4 max-w-[100vw] overflow-hidden">
+          
+          {/* Top Row: Logo & Mobile Dark Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md">
+                <Clapperboard size={24} />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">VidTracker</h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Pipeline v5.3</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight">VidTracker</h1>
-              <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-medium">Pipeline v5.2</p>
-            </div>
+            
+            <button 
+              onClick={() => setDarkMode(!darkMode)}
+              className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400"
+            >
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
           </div>
-          {/* Mobile Dark Toggle */}
-          <button 
-             onClick={() => setDarkMode(!darkMode)}
-             className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400"
-           >
-             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-           </button>
-        </div>
 
-        {/* Middle: Search (Full width on mobile) */}
-        <div className="relative group w-full md:w-auto md:ml-6 md:mr-auto">
+          {/* Middle Row: Search (Full Width on Mobile) */}
+          <div className="relative group w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
             <input 
-              className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-200 transition-all md:w-64"
+              className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-200 transition-all"
               placeholder="Search videos..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
-        </div>
-        
-        {/* Bottom/Right: Controls (Scrollable on mobile) */}
-        <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
-           {/* Desktop Dark Toggle */}
-           <button 
-             onClick={() => setDarkMode(!darkMode)}
-             className="hidden md:block p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-           >
-             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-           </button>
+          </div>
 
-           {viewMode === 'creator' && (
-             <button onClick={openNewTaskModal} className="flex-shrink-0 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md shadow-indigo-200 dark:shadow-none transition-all">
-               <Plus size={16} /> <span className="hidden sm:inline">New Project</span><span className="sm:hidden">New</span>
-             </button>
-           )}
+          {/* Bottom Row: Controls (Scrollable on small screens) */}
+          <div className="flex items-center justify-between overflow-x-auto no-scrollbar pb-1 gap-2">
+             <div className="flex items-center gap-2">
+                {viewMode === 'creator' && (
+                  <button onClick={openNewTaskModal} className="whitespace-nowrap flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md shadow-indigo-200 dark:shadow-none transition-all">
+                    <Plus size={16} /> New Project
+                  </button>
+                )}
+             </div>
 
-            <div className="flex-shrink-0 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-                <button onClick={() => setViewMode('creator')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all", viewMode === 'creator' ? "bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}>
-                    <Layout size={16} /> <span className="hidden sm:inline">Creator</span>
+             <div className="flex items-center gap-2">
+                {/* Desktop Dark Toggle */}
+                <button 
+                  onClick={() => setDarkMode(!darkMode)}
+                  className="hidden md:block p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                >
+                  {darkMode ? <Sun size={20} /> : <Moon size={20} />}
                 </button>
-                <button onClick={() => setViewMode('editor')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all", viewMode === 'editor' ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}>
-                    <Shield size={16} /> <span className="hidden sm:inline">Editor</span>
-                </button>
-            </div>
+
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <button onClick={() => setViewMode('creator')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap", viewMode === 'creator' ? "bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}>
+                        <Layout size={16} /> Creator
+                    </button>
+                    <button onClick={() => setViewMode('editor')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap", viewMode === 'editor' ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}>
+                        <Shield size={16} /> Editor
+                    </button>
+                </div>
+             </div>
+          </div>
         </div>
       </header>
 
-      {/* BOARD (Horizontal Snap Scrolling on Mobile) */}
-      <main className="flex-1 overflow-x-auto overflow-y-hidden">
-        <div className="h-full p-4 md:p-6 flex gap-4 md:gap-6 w-max mx-auto min-w-full snap-x snap-mandatory md:snap-none">
+      {/* BOARD (Snap Scrolling) */}
+      <main className="flex-1 overflow-hidden w-full">
+        <div className="h-full w-full overflow-x-auto snap-x snap-mandatory flex gap-4 p-4 md:p-6 md:snap-none">
             <DndContext sensors={sensors} collisionDetection={closestCorners} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragStart={(e) => setActiveTask(e.active.data.current?.task)}>
                 {filteredColumns.map(col => (
                     <KanbanColumn key={col.id} column={col} onAddTask={openNewTaskModal} onEditTask={openEditTaskModal} onToggleQuickCheck={handleToggleQuickCheck} />
