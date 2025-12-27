@@ -370,7 +370,7 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
                    <div className="relative">
                        <input 
                          type="date" 
-                         className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 pr-8 text-sm text-slate-600 dark:text-slate-300 outline-none appearance-none min-w-0 [&::-webkit-calendar-picker-indicator]:opacity-0" 
+                         className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md h-10 px-3 pr-10 text-sm text-slate-600 dark:text-slate-300 outline-none appearance-none block min-w-0 [&::-webkit-calendar-picker-indicator]:opacity-0" 
                          value={formData.dueDate} 
                          onChange={e => setFormData({...formData, dueDate: e.target.value})} 
                        />
