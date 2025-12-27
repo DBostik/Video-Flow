@@ -25,15 +25,15 @@ import { CSS } from '@dnd-kit/utilities';
 import { 
   Layout, Clapperboard, Shield, Users, CheckCircle2, Circle, Plus, X, Trash2, 
   Calendar, Tag, AlignLeft, CheckSquare, Search, Image as ImageIcon, Type, 
-  Sun, Moon, LogIn, LogOut, WifiOff
+  Sun, Moon, LogIn, LogOut, WifiOff, Settings, UserPlus
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // --- FIREBASE IMPORTS ---
 import { db, auth, googleProvider } from './firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, type User } from 'firebase/auth';
+import { doc, onSnapshot, setDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs } from 'firebase/firestore';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth';
 
 // --- UTILS ---
 function cn(...inputs: ClassValue[]) {
@@ -61,46 +61,18 @@ function getTagColor(tag: string) {
 }
 
 // --- TYPES ---
-type Subtask = {
-  id: string;
-  title: string;
-  completed: boolean;
-};
-
+type Subtask = { id: string; title: string; completed: boolean; };
 type Task = {
-  id: string;
-  title: string;
-  description: string;
-  dueDate: string;
-  tags: string[];
-  subtasks: Subtask[];
-  scriptLink?: string;
-  footageLink?: string;
-  thumbnailALink?: string;
-  thumbnailBLink?: string;
-  youtubeTitle?: string;
-  youtubeDescription?: string;
-  hasOutline: boolean;
-  hasScript: boolean;
+  id: string; title: string; description: string; dueDate: string; tags: string[];
+  subtasks: Subtask[]; scriptLink?: string; footageLink?: string; thumbnailALink?: string;
+  thumbnailBLink?: string; youtubeTitle?: string; youtubeDescription?: string;
+  hasOutline: boolean; hasScript: boolean;
 };
-
-type ColumnType = {
-  id: string;
-  title: string;
-  tasks: Task[];
-};
+type ColumnType = { id: string; title: string; tasks: Task[]; };
+type SimpleUser = { email: string; uid: string; };
 
 // --- CONSTANTS ---
-const DEFAULT_SUBTASKS = [
-  "Finalize Script",
-  "Create Thumbnails",
-  "Create Titles",
-  "Create Description",
-  "Record Video",
-  "Trim/Edit Draft",
-  "Publish To YouTube"
-];
-
+const DEFAULT_SUBTASKS = ["Finalize Script", "Create Thumbnails", "Create Titles", "Create Description", "Record Video", "Trim/Edit Draft", "Publish To YouTube"];
 const DEFAULT_COLUMNS: ColumnType[] = [
   { id: 'Ideation', title: 'Ideation', tasks: [] },
   { id: 'Scripting', title: 'Scripting', tasks: [] },
@@ -112,123 +84,111 @@ const DEFAULT_COLUMNS: ColumnType[] = [
 // --- COMPONENTS ---
 
 const SortableTaskCard = ({ task, onClick, onToggleQuickCheck }: { task: Task; onClick: (t: Task) => void, onToggleQuickCheck: (id: string, field: 'hasOutline' | 'hasScript') => void }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: task.id, data: { type: 'Task', task } });
-
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-  };
-
-  if (isDragging) {
-    return (
-      <div 
-        ref={setNodeRef} 
-        style={style} 
-        className="bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-500 opacity-40 h-[220px] rounded-xl"
-      />
-    );
-  }
-
-  const handleQuickCheck = (e: React.MouseEvent, field: 'hasOutline' | 'hasScript') => {
-    e.stopPropagation();
-    onToggleQuickCheck(task.id, field);
-  };
-
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id, data: { type: 'Task', task } });
+  const style = { transform: CSS.Translate.toString(transform), transition };
+  if (isDragging) return <div ref={setNodeRef} style={style} className="bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-500 opacity-40 h-[220px] rounded-xl" />;
+  const handleQuickCheck = (e: React.MouseEvent, field: 'hasOutline' | 'hasScript') => { e.stopPropagation(); onToggleQuickCheck(task.id, field); };
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      onClick={() => onClick(task)}
-      className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing relative touch-manipulation"
-    >
-      <div className="flex justify-between items-start mb-2">
-        <div className="flex flex-wrap gap-1">
-          {task.tags.length > 0 ? task.tags.map(tag => (
-            <span key={tag} className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wide border", getTagColor(tag))}>
-              {tag}
-            </span>
-          )) : <span className="text-[10px] text-slate-300 dark:text-slate-600 font-medium">NO TAGS</span>}
-        </div>
-      </div>
-      
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={() => onClick(task)} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing relative touch-manipulation">
+      <div className="flex justify-between items-start mb-2"><div className="flex flex-wrap gap-1">{task.tags.length > 0 ? task.tags.map(tag => (<span key={tag} className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wide border", getTagColor(tag))}>{tag}</span>)) : <span className="text-[10px] text-slate-300 dark:text-slate-600 font-medium">NO TAGS</span>}</div></div>
       <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base mb-3 leading-snug">{task.title}</h3>
-      
       <div className="space-y-1.5 mb-4">
-        <div 
-          onClick={(e) => handleQuickCheck(e, 'hasOutline')}
-          className={cn("flex items-center gap-2 text-xs font-medium p-1.5 rounded-md transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700", task.hasOutline ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")}
-        >
-           {task.hasOutline ? <CheckCircle2 size={12} /> : <Circle size={12} />} Outline
-        </div>
-        <div 
-          onClick={(e) => handleQuickCheck(e, 'hasScript')}
-          className={cn("flex items-center gap-2 text-xs font-medium p-1.5 rounded-md transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700", task.hasScript ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")}
-        >
-           {task.hasScript ? <CheckCircle2 size={12} /> : <Circle size={12} />} Script Draft
-        </div>
+        <div onClick={(e) => handleQuickCheck(e, 'hasOutline')} className={cn("flex items-center gap-2 text-xs font-medium p-1.5 rounded-md transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700", task.hasOutline ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")}>{task.hasOutline ? <CheckCircle2 size={12} /> : <Circle size={12} />} Outline</div>
+        <div onClick={(e) => handleQuickCheck(e, 'hasScript')} className={cn("flex items-center gap-2 text-xs font-medium p-1.5 rounded-md transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700", task.hasScript ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")}>{task.hasScript ? <CheckCircle2 size={12} /> : <Circle size={12} />} Script Draft</div>
       </div>
-
-      <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-700 pt-3">
-        {task.dueDate ? (
-           <div className={cn("flex items-center gap-1.5 text-xs font-medium", new Date(task.dueDate) < new Date() ? "text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400")}>
-             <Calendar size={12} className={new Date(task.dueDate) < new Date() ? "text-red-500 dark:text-red-400" : "text-indigo-500 dark:text-indigo-400"}/> 
-             Due {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-           </div>
-        ) : <span className="text-[10px] text-slate-300 dark:text-slate-600">No Due Date</span>}
-
-        <div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
-           <CheckSquare size={12} /> {task.subtasks.filter(t => t.completed).length}/{task.subtasks.length}
-        </div>
-      </div>
+      <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-700 pt-3">{task.dueDate ? (<div className={cn("flex items-center gap-1.5 text-xs font-medium", new Date(task.dueDate) < new Date() ? "text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400")}><Calendar size={12} className={new Date(task.dueDate) < new Date() ? "text-red-500 dark:text-red-400" : "text-indigo-500 dark:text-indigo-400"}/> Due {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>) : <span className="text-[10px] text-slate-300 dark:text-slate-600">No Due Date</span>}<div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500"><CheckSquare size={12} /> {task.subtasks.filter(t => t.completed).length}/{task.subtasks.length}</div></div>
     </div>
   );
 };
 
 const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { column: ColumnType, onAddTask: () => void, onEditTask: (t: Task) => void, onToggleQuickCheck: (id: string, field: 'hasOutline' | 'hasScript') => void }) => {
-  const { setNodeRef } = useSortable({
-    id: column.id,
-    data: { type: 'Column', column }
-  });
-
+  const { setNodeRef } = useSortable({ id: column.id, data: { type: 'Column', column } });
   return (
     <div className="flex flex-col min-w-[85vw] md:min-w-[320px] max-w-[85vw] md:max-w-[320px] h-full snap-center shrink-0">
       <div className="flex items-center justify-between mb-4 px-2">
-        <div className="flex items-center gap-2">
-           <h2 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide">{column.title}</h2>
-           <span className="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{column.tasks.length}</span>
-        </div>
-        {column.id === 'Ideation' && (
-          <button onClick={onAddTask} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-500 dark:text-slate-400">
-            <Plus size={16} />
-          </button>
-        )}
+        <div className="flex items-center gap-2"><h2 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide">{column.title}</h2><span className="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{column.tasks.length}</span></div>
+        {column.id === 'Ideation' && (<button onClick={onAddTask} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-500 dark:text-slate-400"><Plus size={16} /></button>)}
       </div>
-
       <div ref={setNodeRef} className="flex-1 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl p-3 border border-slate-200/50 dark:border-slate-700/50 flex flex-col gap-3 overflow-y-auto">
-        <SortableContext items={column.tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-          {column.tasks.map((task) => (
-            <SortableTaskCard key={task.id} task={task} onClick={onEditTask} onToggleQuickCheck={onToggleQuickCheck} />
-          ))}
-        </SortableContext>
-        {column.tasks.length === 0 && (
-            <div className="h-24 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-600 text-xs font-medium">
-                Empty
-            </div>
-        )}
+        <SortableContext items={column.tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>{column.tasks.map((task) => (<SortableTaskCard key={task.id} task={task} onClick={onEditTask} onToggleQuickCheck={onToggleQuickCheck} />))}</SortableContext>
+        {column.tasks.length === 0 && (<div className="h-24 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-600 text-xs font-medium">Empty</div>)}
       </div>
     </div>
   );
 };
 
+// --- SETTINGS MODAL ---
+const SettingsModal = ({ isOpen, onClose, user, boardId, allowedUsers }: { isOpen: boolean, onClose: () => void, user: SimpleUser | null, boardId: string | null, allowedUsers: string[] }) => {
+  const [emailInput, setEmailInput] = useState('');
+  
+  if (!isOpen || !user) return null;
+
+  const handleAddUser = async () => {
+    if (!emailInput.includes('@')) return;
+    try {
+      const boardRef = doc(db, "boards", user.uid); // Only admin can edit their own board settings
+      await updateDoc(boardRef, {
+        allowedUsers: arrayUnion(emailInput.trim())
+      });
+      setEmailInput('');
+    } catch (e) {
+      console.error("Error adding user:", e);
+      alert("Failed to add user. Check permissions.");
+    }
+  };
+
+  const handleRemoveUser = async (emailToRemove: string) => {
+    if (!confirm(`Remove ${emailToRemove}?`)) return;
+    try {
+      const boardRef = doc(db, "boards", user.uid);
+      await updateDoc(boardRef, {
+        allowedUsers: arrayRemove(emailToRemove)
+      });
+    } catch (e) { console.error(e); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-xl w-full max-w-md shadow-2xl p-6 border border-slate-200 dark:border-slate-800">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2"><Settings size={20}/> Board Settings</h2>
+          <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
+        </div>
+
+        <div className="mb-6">
+          <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Invite Editor (By Email)</label>
+          <div className="flex gap-2">
+            <input 
+              className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-200"
+              placeholder="editor@gmail.com"
+              value={emailInput}
+              onChange={e => setEmailInput(e.target.value)}
+            />
+            <button onClick={handleAddUser} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold text-sm"><UserPlus size={18}/></button>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Team Access ({allowedUsers.length})</label>
+          <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg max-h-[200px] overflow-y-auto">
+            {allowedUsers.length === 0 ? (
+              <div className="p-4 text-center text-slate-400 text-xs">No users invited yet.</div>
+            ) : (
+              allowedUsers.map(email => (
+                <div key={email} className="flex justify-between items-center p-3 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{email}</span>
+                  <button onClick={() => handleRemoveUser(email)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={14}/></button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- TASK MODAL (RESTORED) ---
 const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | null, isOpen: boolean, onClose: () => void, onSave: (t: Task) => void, onDelete: (id: string) => void }) => {
   const [formData, setFormData] = useState<Task>(task || {
     id: generateId(),
@@ -307,7 +267,7 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
                       onChange={e => setFormData({...formData, description: e.target.value})}
                    />
                 </div>
-                {/* ... Rest of form ... */}
+                
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
                    <div className="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-400 mb-3">
                       <Type size={16} /> YouTube Metadata
@@ -395,29 +355,11 @@ const LoginScreen = ({ onLogin, hasError }: { onLogin: () => void, hasError: boo
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-slate-950 p-8 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 max-w-sm w-full text-center">
-        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-indigo-500/30">
-          <Clapperboard size={32} />
-        </div>
+        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-indigo-500/30"><Clapperboard size={32} /></div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Welcome Back</h1>
         <p className="text-slate-500 dark:text-slate-400 mb-8 text-sm">Sign in to access your production pipeline.</p>
-        
-        {hasError && (
-          <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-600 dark:text-red-300 flex items-center gap-2 text-left">
-            <WifiOff size={16} className="shrink-0" />
-            <span>Firebase could not connect. Check console for details.</span>
-          </div>
-        )}
-
-        <button 
-          onClick={onLogin}
-          disabled={hasError}
-          className={cn("w-full flex items-center justify-center gap-3 border font-bold py-3 px-4 rounded-xl transition-all", 
-             hasError ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed" : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
-          )}
-        >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className={cn("w-5 h-5", hasError && "opacity-50")} alt="Google" />
-          Sign in with Google
-        </button>
+        {hasError && (<div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-600 dark:text-red-300 flex items-center gap-2 text-left"><WifiOff size={16} className="shrink-0" /><span>Firebase could not connect. Check console for details.</span></div>)}
+        <button onClick={onLogin} disabled={hasError} className={cn("w-full flex items-center justify-center gap-3 border font-bold py-3 px-4 rounded-xl transition-all", hasError ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed" : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200")}><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className={cn("w-5 h-5", hasError && "opacity-50")} alt="Google" /> Sign in with Google</button>
       </div>
     </div>
   );
@@ -425,16 +367,16 @@ const LoginScreen = ({ onLogin, hasError }: { onLogin: () => void, hasError: boo
 
 // --- MAIN APP ---
 const App = () => {
-  const [user, setUser] = useState<{email: string; uid: string} | null>(null);
+  const [user, setUser] = useState<SimpleUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState<ColumnType[]>(DEFAULT_COLUMNS); 
+  const [allowedUsers, setAllowedUsers] = useState<string[]>([]); // New: Guest List
   const [authError, setAuthError] = useState(false);
+  const [boardId, setBoardId] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('vidtracker-theme') === 'dark' || 
-             (!localStorage.getItem('vidtracker-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }
+    if (typeof window !== 'undefined') return localStorage.getItem('vidtracker-theme') === 'dark' || (!localStorage.getItem('vidtracker-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
     return false;
   });
 
@@ -444,122 +386,88 @@ const App = () => {
   const [viewMode, setViewMode] = useState<'creator' | 'editor'>('creator');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 1. AUTH LISTENER (SAFE + Redirect Handling)
+  // 1. AUTH LISTENER
   useEffect(() => {
-    if (!auth) {
-      console.error("Auth module missing");
-      setAuthError(true);
-      setLoading(false);
-      return;
-    }
-    
-    // Check if we just came back from a redirect
-    getRedirectResult(auth).then((result) => {
-      if (result) {
-        // User just logged in via redirect!
-        console.log("Redirect login successful");
-      }
-    }).catch((error) => {
-      console.error("Redirect auth error:", error);
-      setAuthError(true);
-    });
-
-    try {
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        if (currentUser) {
-            setUser({ email: currentUser.email || 'User', uid: currentUser.uid });
+    if (!auth) { setAuthError(true); setLoading(false); return; }
+    getRedirectResult(auth).catch(() => setAuthError(true));
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        const email = currentUser.email || '';
+        setUser({ email, uid: currentUser.uid });
+        
+        // AUTO-DISCOVERY: Check if I have my own board, or if I'm a guest elsewhere
+        const myBoardRef = doc(db, "boards", currentUser.uid);
+        
+        const q = query(collection(db, "boards"), where("allowedUsers", "array-contains", email));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+           const sharedBoard = querySnapshot.docs[0];
+           console.log("Found shared board!", sharedBoard.id);
+           setBoardId(sharedBoard.id);
         } else {
-            setUser(null);
+           setBoardId(currentUser.uid);
         }
-        setLoading(false);
-      });
-      return () => unsubscribe();
-    } catch (e) {
-      console.error("Auth listener failed", e);
-      setAuthError(true);
+      } else {
+        setUser(null);
+      }
       setLoading(false);
-    }
+    });
+    return () => unsubscribe();
   }, []);
 
-  // 2. FIRESTORE SYNC (NOW PRIVATE PER USER)
+  // 2. FIRESTORE SYNC
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user || !db || !boardId) return;
     
-    // CHANGED: "mainBoard" -> user.uid
-    // This creates a unique document for every user ID
-    const unsub = onSnapshot(doc(db, "boards", user.uid), (doc) => {
-       if (doc.exists()) {
-         setColumns(doc.data().columns);
+    const unsub = onSnapshot(doc(db, "boards", boardId), (docSnap) => {
+       if (docSnap.exists()) {
+         const data = docSnap.data();
+         setColumns(data.columns || DEFAULT_COLUMNS);
+         setAllowedUsers(data.allowedUsers || []);
        } else {
-         setDoc(doc.ref, { columns: DEFAULT_COLUMNS });
+         if (boardId === user.uid) {
+            setDoc(docSnap.ref, { columns: DEFAULT_COLUMNS, allowedUsers: [] });
+         } else {
+            setColumns([]); 
+         }
        }
-    }, (err) => {
-        console.warn("Firestore sync error:", err);
-    });
+    }, (err) => console.warn("Sync error (Access Denied?):", err));
 
     return () => unsub();
-  }, [user]);
+  }, [user, boardId]);
 
-  // 3. THEME EFFECT
+  // 3. THEME & SENSORS
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('vidtracker-theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('vidtracker-theme', 'light');
-    }
+    if (darkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('vidtracker-theme', 'dark'); } 
+    else { document.documentElement.classList.remove('dark'); localStorage.setItem('vidtracker-theme', 'light'); }
   }, [darkMode]);
+  
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  // HELPER: Save to Cloud (NOW PRIVATE)
+  // HELPER: Save to Cloud
   const saveBoardToCloud = async (newCols: ColumnType[]) => {
      setColumns(newCols);
-     if (user && db) {
+     if (user && db && boardId) {
        try {
-        // CHANGED: "mainBoard" -> user.uid
-        await setDoc(doc(db, "boards", user.uid), { columns: newCols });
-       } catch (e) {
-           console.error("Save failed:", e);
-       }
+        await setDoc(doc(db, "boards", boardId), { columns: newCols }, { merge: true });
+       } catch (e) { console.error("Save failed:", e); }
      }
   };
 
-  const handleLogin = async () => {
-    if (!auth) return;
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      console.error("Popup failed, trying redirect...", error);
-      try {
-        await signInWithRedirect(auth, googleProvider);
-      } catch (redirectError) {
-         console.error("Both login methods failed", redirectError);
-      }
-    }
-  };
+  const handleLogin = async () => { if (!auth) return; try { await signInWithPopup(auth, googleProvider); } catch (e) { try { await signInWithRedirect(auth, googleProvider); } catch(e2) {} } };
+  const handleLogout = async () => { if (!auth) return; await signOut(auth); };
 
-  const handleLogout = async () => {
-    if (!auth) return;
-    await signOut(auth);
-  };
-
+  // Task Logic
   const handleSaveTask = (updatedTask: Task) => {
     let newColumns = [...columns];
     const exists = newColumns.some(col => col.tasks.some(t => t.id === updatedTask.id));
     const scriptDone = updatedTask.subtasks.find(s => s.title === "Finalize Script")?.completed;
     const recordDone = updatedTask.subtasks.find(s => s.title === "Record Video")?.completed;
-
     let targetColId = null;
     const currentCol = newColumns.find(c => c.tasks.some(t => t.id === updatedTask.id));
-    
     if (scriptDone && (!currentCol || currentCol.id === 'Ideation' || currentCol.id === 'Scripting')) targetColId = 'Filming';
     if (recordDone && (!currentCol || currentCol.id === 'Filming' || currentCol.id === 'Scripting' || currentCol.id === 'Ideation')) targetColId = 'Editing';
-
     if (exists) {
       newColumns = newColumns.map(col => {
          if (targetColId && col.id !== targetColId && col.tasks.some(t => t.id === updatedTask.id)) return { ...col, tasks: col.tasks.filter(t => t.id !== updatedTask.id) };
@@ -567,47 +475,23 @@ const App = () => {
          if (targetColId && col.id === targetColId) return { ...col, tasks: [...col.tasks, updatedTask] };
          return col;
       });
-    } else {
-      newColumns = newColumns.map(col => col.id === 'Ideation' ? { ...col, tasks: [updatedTask, ...col.tasks] } : col);
-    }
+    } else { newColumns = newColumns.map(col => col.id === 'Ideation' ? { ...col, tasks: [updatedTask, ...col.tasks] } : col); }
     saveBoardToCloud(newColumns);
   };
-
-  const handleDeleteTask = (taskId: string) => { 
-    const newCols = columns.map(col => ({ ...col, tasks: col.tasks.filter(t => t.id !== taskId) }));
-    saveBoardToCloud(newCols);
-  };
-  
-  const handleToggleQuickCheck = (taskId: string, field: 'hasOutline' | 'hasScript') => { 
-    const newCols = columns.map(col => ({ ...col, tasks: col.tasks.map(t => t.id === taskId ? { ...t, [field]: !t[field] } : t) }));
-    saveBoardToCloud(newCols);
-  };
-  
+  const handleDeleteTask = (taskId: string) => { saveBoardToCloud(columns.map(col => ({ ...col, tasks: col.tasks.filter(t => t.id !== taskId) }))); };
+  const handleToggleQuickCheck = (taskId: string, field: 'hasOutline' | 'hasScript') => { saveBoardToCloud(columns.map(col => ({ ...col, tasks: col.tasks.map(t => t.id === taskId ? { ...t, [field]: !t[field] } : t) }))); };
   const openNewTaskModal = () => { setEditingTask(null); setIsModalOpen(true); };
   const openEditTaskModal = (task: Task) => { setEditingTask(task); setIsModalOpen(true); };
-
   function findColumn(id: string | undefined) { if (!id) return null; return columns.find(c => c.id === id || c.tasks.some(t => t.id === id)); }
-
   const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event;
-    if (!over) return;
-    const activeId = active.id;
-    const overId = over.id;
-    const activeColumn = findColumn(activeId as string);
-    const overColumn = findColumn(overId as string);
+    const { active, over } = event; if (!over) return;
+    const activeId = active.id; const overId = over.id;
+    const activeColumn = findColumn(activeId as string); const overColumn = findColumn(overId as string);
     if (!activeColumn || !overColumn || activeColumn === overColumn) return;
-
     setColumns((prev) => {
-      const activeItems = activeColumn.tasks;
-      const overItems = overColumn.tasks;
-      const activeIndex = activeItems.findIndex((t) => t.id === activeId);
-      const overIndex = overItems.findIndex((t) => t.id === overId);
-      let newIndex;
-      if (overItems.some(t => t.id === overId)) {
-        newIndex = overIndex >= 0 ? overIndex + (activeId < overId ? 1 : 0) : overItems.length + 1;
-      } else {
-        newIndex = overItems.length + 1;
-      }
+      const activeItems = activeColumn.tasks; const overItems = overColumn.tasks;
+      const activeIndex = activeItems.findIndex((t) => t.id === activeId); const overIndex = overItems.findIndex((t) => t.id === overId);
+      let newIndex = overItems.some(t => t.id === overId) ? (overIndex >= 0 ? overIndex + (activeId < overId ? 1 : 0) : overItems.length + 1) : overItems.length + 1;
       return prev.map((c) => {
         if (c.id === activeColumn.id) return { ...c, tasks: activeItems.filter((t) => t.id !== activeId) };
         if (c.id === overColumn.id) return { ...c, tasks: [...overItems.slice(0, newIndex), activeItems[activeIndex], ...overItems.slice(newIndex, overItems.length)] };
@@ -615,141 +499,42 @@ const App = () => {
       });
     });
   };
+  const handleDragEnd = (event: DragEndEvent) => { setActiveTask(null); };
+  const columnsRef = useRef(columns); useEffect(() => { columnsRef.current = columns; }, [columns]);
+  const handleDragEndWithSave = (event: DragEndEvent) => { handleDragEnd(event); setTimeout(() => { saveBoardToCloud(columnsRef.current); }, 50); };
+  const filteredColumns = columns.filter(col => { if (viewMode === 'editor' && col.id === 'Ideation') return false; return true; }).map(col => ({ ...col, tasks: col.tasks.filter(t => { if (!searchQuery) return true; const q = searchQuery.toLowerCase(); return t.title.toLowerCase().includes(q) || t.tags.some(tag => tag.toLowerCase().includes(q)); }) }));
+  const dropAnimation: DropAnimation = { sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.5', }, }, }), };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveTask(null);
-    if (!over) return;
-    const activeId = active.id as string;
-    const overId = over.id as string;
-    const activeColumn = findColumn(activeId);
-    const overColumn = findColumn(overId);
-    if (!activeColumn || !overColumn) return;
-  };
-  
-  const columnsRef = useRef(columns);
-  useEffect(() => { columnsRef.current = columns; }, [columns]);
+  if (loading) return <div className="h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-400">Loading VidTracker...</div>;
+  if (!user) return <LoginScreen onLogin={handleLogin} hasError={authError} />;
 
-  const handleDragEndWithSave = (event: DragEndEvent) => {
-      handleDragEnd(event); 
-      setTimeout(() => {
-          saveBoardToCloud(columnsRef.current);
-      }, 50);
-  };
-
-  const filteredColumns = columns.filter(col => {
-    if (viewMode === 'editor' && col.id === 'Ideation') return false;
-    return true;
-  }).map(col => ({
-    ...col,
-    tasks: col.tasks.filter(t => {
-      if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
-      return t.title.toLowerCase().includes(q) || t.tags.some(tag => tag.toLowerCase().includes(q));
-    })
-  }));
-
-  const dropAnimation: DropAnimation = {
-    sideEffects: defaultDropAnimationSideEffects({
-      styles: {
-        active: {
-          opacity: '0.5',
-        },
-      },
-    }),
-  };
-
-  if (loading) {
-     return <div className="h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-400">Loading VidTracker...</div>;
-  }
-
-  if (!user) {
-    return <LoginScreen onLogin={handleLogin} hasError={authError} />;
-  }
-
+  // --- RENDER ---
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      
-      {/* HEADER */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 md:px-6 md:py-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-50 shadow-sm transition-colors duration-200 gap-4">
-        
-        {/* LOGO */}
-        <div className="flex items-center justify-between w-full md:w-auto">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md">
-              <Clapperboard size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">VidTracker</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Synced • {user.email}</p>
-            </div>
-          </div>
-           <button onClick={() => setDarkMode(!darkMode)} className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400">
-             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-           </button>
-        </div>
-
-        {/* SEARCH */}
-        <div className="w-full md:w-auto md:flex-1 md:max-w-md md:mx-6">
-            <div className="relative group">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
-              <input 
-                className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-200 transition-all"
-                placeholder="Search videos..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-              />
-            </div>
-        </div>
-        
-        {/* ACTIONS */}
+        <div className="flex items-center justify-between w-full md:w-auto"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md"><Clapperboard size={24} /></div><div><h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">VidTracker</h1><p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Synced • {user.email}</p></div></div><button onClick={() => setDarkMode(!darkMode)} className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button></div>
+        <div className="w-full md:w-auto md:flex-1 md:max-w-md md:mx-6"><div className="relative group"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} /><input className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-200 transition-all" placeholder="Search videos..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div></div>
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto md:overflow-visible no-scrollbar pb-1 md:pb-0">
-           <button onClick={() => setDarkMode(!darkMode)} className="hidden md:block p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex-shrink-0">
-             {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-           </button>
-
-           <button onClick={handleLogout} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-all flex-shrink-0" title="Sign Out">
-             <LogOut size={20} />
-           </button>
-
-           {viewMode === 'creator' && (
-             <button onClick={openNewTaskModal} className="flex-shrink-0 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md shadow-indigo-200 dark:shadow-none transition-all whitespace-nowrap">
-               <Plus size={16} /> <span className="hidden sm:inline">New Project</span><span className="sm:hidden">New</span>
-             </button>
-           )}
-
+           {/* SETTINGS BUTTON (Only show for Owner) */}
+           {boardId === user.uid && (<button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 transition-all flex-shrink-0" title="Team Settings"><Settings size={20} /></button>)}
+           <button onClick={() => setDarkMode(!darkMode)} className="hidden md:block p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex-shrink-0">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+           <button onClick={handleLogout} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-all flex-shrink-0" title="Sign Out"><LogOut size={20} /></button>
+           {viewMode === 'creator' && (<button onClick={openNewTaskModal} className="flex-shrink-0 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md shadow-indigo-200 dark:shadow-none transition-all whitespace-nowrap"><Plus size={16} /> <span className="hidden sm:inline">New Project</span><span className="sm:hidden">New</span></button>)}
             <div className="flex-shrink-0 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
-                <button onClick={() => setViewMode('creator')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap", viewMode === 'creator' ? "bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}>
-                    <Layout size={16} /> <span className="hidden sm:inline">Creator</span>
-                </button>
-                <button onClick={() => setViewMode('editor')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap", viewMode === 'editor' ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}>
-                    <Shield size={16} /> <span className="hidden sm:inline">Editor</span>
-                </button>
+                <button onClick={() => setViewMode('creator')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap", viewMode === 'creator' ? "bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}><Layout size={16} /> <span className="hidden sm:inline">Creator</span></button>
+                <button onClick={() => setViewMode('editor')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap", viewMode === 'editor' ? "bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}><Shield size={16} /> <span className="hidden sm:inline">Editor</span></button>
             </div>
         </div>
       </header>
-
-      {/* BOARD */}
-      <main className="flex-1 w-full flex flex-col overflow-hidden">
-        <div className="flex-1 w-full overflow-x-auto snap-x snap-mandatory flex gap-4 p-4 md:p-6 md:snap-none dark:[color-scheme:dark]">
-            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragOver={handleDragOver} onDragEnd={handleDragEndWithSave} onDragStart={(e) => setActiveTask(e.active.data.current?.task)}>
-                {filteredColumns.map(col => (
-                    <KanbanColumn key={col.id} column={col} onAddTask={openNewTaskModal} onEditTask={openEditTaskModal} onToggleQuickCheck={handleToggleQuickCheck} />
-                ))}
-                <DragOverlay dropAnimation={dropAnimation}>
-                    {activeTask ? <SortableTaskCard task={activeTask} onClick={() => {}} onToggleQuickCheck={() => {}} /> : null}
-                </DragOverlay>
-            </DndContext>
-        </div>
-      </main>
-      
-      {/* FOOTER */}
-      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-2 px-6 text-xs text-slate-400 dark:text-slate-500 flex justify-between">
-         <span>VidTracker Cloud • {user.email}</span>
+      <main className="flex-1 w-full flex flex-col overflow-hidden"><div className="flex-1 w-full overflow-x-auto snap-x snap-mandatory flex gap-4 p-4 md:p-6 md:snap-none dark:[color-scheme:dark]"><DndContext sensors={sensors} collisionDetection={closestCorners} onDragOver={handleDragOver} onDragEnd={handleDragEndWithSave} onDragStart={(e) => setActiveTask(e.active.data.current?.task)}>{filteredColumns.map(col => (<KanbanColumn key={col.id} column={col} onAddTask={openNewTaskModal} onEditTask={openEditTaskModal} onToggleQuickCheck={handleToggleQuickCheck} />))}<DragOverlay dropAnimation={dropAnimation}>{activeTask ? <SortableTaskCard task={activeTask} onClick={() => {}} onToggleQuickCheck={() => {}} /> : null}</DragOverlay></DndContext></div></main>
+      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-2 px-6 text-xs text-slate-400 dark:text-slate-500 flex justify-between items-center">
+         <div className="flex items-center gap-4">
+             <span>{boardId === user.uid ? "My Board" : "Shared Board"} • {user.email}</span>
+         </div>
          <span className="flex items-center gap-1"><Users size={12}/> {viewMode}</span>
       </footer>
-
       <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} task={editingTask} onSave={handleSaveTask} onDelete={handleDeleteTask} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} boardId={boardId} allowedUsers={allowedUsers} />
     </div>
   );
 };
