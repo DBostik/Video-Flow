@@ -33,7 +33,7 @@ import { twMerge } from 'tailwind-merge';
 // --- FIREBASE IMPORTS ---
 import { db, auth, googleProvider } from './firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { signInWithPopup, signOut, onAuthStateChanged, type User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, type User } from 'firebase/auth';
 
 // --- UTILS ---
 function cn(...inputs: ClassValue[]) {
@@ -444,7 +444,7 @@ const App = () => {
   const [viewMode, setViewMode] = useState<'creator' | 'editor'>('creator');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 1. AUTH LISTENER (SAFE)
+  // 1. AUTH LISTENER (SAFE + Redirect Handling)
   useEffect(() => {
     if (!auth) {
       console.error("Auth module missing");
@@ -453,6 +453,17 @@ const App = () => {
       return;
     }
     
+    // Check if we just came back from a redirect
+    getRedirectResult(auth).then((result) => {
+      if (result) {
+        // User just logged in via redirect!
+        console.log("Redirect login successful");
+      }
+    }).catch((error) => {
+      console.error("Redirect auth error:", error);
+      setAuthError(true);
+    });
+
     try {
       const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
         if (currentUser) {
@@ -470,11 +481,13 @@ const App = () => {
     }
   }, []);
 
-  // 2. FIRESTORE SYNC (Only runs if user is logged in)
+  // 2. FIRESTORE SYNC (NOW PRIVATE PER USER)
   useEffect(() => {
     if (!user || !db) return;
     
-    const unsub = onSnapshot(doc(db, "boards", "mainBoard"), (doc) => {
+    // CHANGED: "mainBoard" -> user.uid
+    // This creates a unique document for every user ID
+    const unsub = onSnapshot(doc(db, "boards", user.uid), (doc) => {
        if (doc.exists()) {
          setColumns(doc.data().columns);
        } else {
@@ -503,12 +516,13 @@ const App = () => {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // HELPER: Save to Cloud
+  // HELPER: Save to Cloud (NOW PRIVATE)
   const saveBoardToCloud = async (newCols: ColumnType[]) => {
      setColumns(newCols);
      if (user && db) {
        try {
-        await setDoc(doc(db, "boards", "mainBoard"), { columns: newCols });
+        // CHANGED: "mainBoard" -> user.uid
+        await setDoc(doc(db, "boards", user.uid), { columns: newCols });
        } catch (e) {
            console.error("Save failed:", e);
        }
@@ -519,8 +533,13 @@ const App = () => {
     if (!auth) return;
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Login failed", error);
+    } catch (error: any) {
+      console.error("Popup failed, trying redirect...", error);
+      try {
+        await signInWithRedirect(auth, googleProvider);
+      } catch (redirectError) {
+         console.error("Both login methods failed", redirectError);
+      }
     }
   };
 
