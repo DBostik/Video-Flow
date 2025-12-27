@@ -367,14 +367,17 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
              <div className="space-y-6 order-1 md:order-2">
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Due Date</label>
-                   <div className="relative">
+                   <div className="relative group">
                        <input 
                          type="date" 
-                         className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md h-10 px-3 pr-10 text-sm text-slate-600 dark:text-slate-300 outline-none appearance-none block min-w-0 [&::-webkit-calendar-picker-indicator]:opacity-0" 
+                         className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md h-10 px-3 pr-10 text-sm text-slate-600 dark:text-slate-300 outline-none appearance-none block min-w-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-10 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer" 
                          value={formData.dueDate} 
                          onChange={e => setFormData({...formData, dueDate: e.target.value})} 
                        />
-                       <Calendar className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                       <Calendar 
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" 
+                          size={16} 
+                        />
                    </div>
                 </div>
 
