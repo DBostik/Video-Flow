@@ -367,7 +367,7 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
              <div className="space-y-6 order-1 md:order-2">
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Due Date</label>
-                   <input type="date" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-sm text-slate-600 dark:text-slate-300 outline-none" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} />
+                   <input type="date" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-sm text-slate-600 dark:text-slate-300 outline-none dark:[color-scheme:dark]" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} />
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 space-y-3">
