@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   DndContext,
   closestCorners,
@@ -23,31 +23,25 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { 
-  Layout, 
-  Clapperboard, 
-  Shield, 
-  Users, 
-  CheckCircle2, 
-  Circle, 
-  Plus, 
-  X, 
-  Trash2, 
-  Calendar, 
-  Tag, 
-  AlignLeft, 
-  CheckSquare, 
-  Search, 
-  Image as ImageIcon, 
-  Type,
-  Sun,
-  Moon
+  Layout, Clapperboard, Shield, Users, CheckCircle2, Circle, Plus, X, Trash2, 
+  Calendar, Tag, AlignLeft, CheckSquare, Search, Image as ImageIcon, Type, 
+  Sun, Moon, LogIn, LogOut, WifiOff
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+// --- FIREBASE IMPORTS ---
+import { db, auth, googleProvider } from './firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { signInWithPopup, signOut, onAuthStateChanged, type User } from 'firebase/auth';
+
 // --- UTILS ---
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+function generateId() {
+  return Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
 }
 
 function getTagColor(tag: string) {
@@ -117,7 +111,6 @@ const DEFAULT_COLUMNS: ColumnType[] = [
 
 // --- COMPONENTS ---
 
-// 1. The Draggable Card
 const SortableTaskCard = ({ task, onClick, onToggleQuickCheck }: { task: Task; onClick: (t: Task) => void, onToggleQuickCheck: (id: string, field: 'hasOutline' | 'hasScript') => void }) => {
   const {
     attributes,
@@ -200,7 +193,6 @@ const SortableTaskCard = ({ task, onClick, onToggleQuickCheck }: { task: Task; o
   );
 };
 
-// 2. The Column
 const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { column: ColumnType, onAddTask: () => void, onEditTask: (t: Task) => void, onToggleQuickCheck: (id: string, field: 'hasOutline' | 'hasScript') => void }) => {
   const { setNodeRef } = useSortable({
     id: column.id,
@@ -237,12 +229,9 @@ const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { c
   );
 };
 
-// 3. Edit/Create Modal
 const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | null, isOpen: boolean, onClose: () => void, onSave: (t: Task) => void, onDelete: (id: string) => void }) => {
-  if (!isOpen) return null;
-
   const [formData, setFormData] = useState<Task>(task || {
-    id: crypto.randomUUID(),
+    id: generateId(),
     title: '', description: '', dueDate: '', tags: [],
     subtasks: [], hasOutline: false, hasScript: false,
     scriptLink: '', footageLink: '', thumbnailALink: '', thumbnailBLink: '', youtubeTitle: '', youtubeDescription: ''
@@ -254,26 +243,27 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
   useEffect(() => {
     if (task) {
       setFormData(task);
-    } else {
+    } else if (isOpen) {
       setFormData({
-        id: crypto.randomUUID(), title: '', description: '', dueDate: '', tags: [],
-        subtasks: DEFAULT_SUBTASKS.map(title => ({ id: crypto.randomUUID(), title, completed: false })),
+        id: generateId(), 
+        title: '', description: '', dueDate: '', tags: [],
+        subtasks: DEFAULT_SUBTASKS.map(title => ({ id: generateId(), title, completed: false })),
         hasOutline: false, hasScript: false, scriptLink: '', footageLink: '', thumbnailALink: '', thumbnailBLink: '', youtubeTitle: '', youtubeDescription: ''
       });
     }
   }, [task, isOpen]);
 
+  if (!isOpen) return null;
+
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(formData); onClose(); };
   const addTag = () => { if (newTag.trim() && !formData.tags.includes(newTag.trim())) { setFormData({ ...formData, tags: [...formData.tags, newTag.trim()] }); setNewTag(''); } };
-  const addSubtask = () => { if (newSubtask.trim()) { setFormData({ ...formData, subtasks: [...formData.subtasks, { id: crypto.randomUUID(), title: newSubtask.trim(), completed: false }] }); setNewSubtask(''); } };
+  const addSubtask = () => { if (newSubtask.trim()) { setFormData({ ...formData, subtasks: [...formData.subtasks, { id: generateId(), title: newSubtask.trim(), completed: false }] }); setNewSubtask(''); } };
   const toggleSubtask = (id: string) => { setFormData({ ...formData, subtasks: formData.subtasks.map(st => st.id === id ? { ...st, completed: !st.completed } : st) }); };
   const deleteSubtask = (id: string) => { setFormData({ ...formData, subtasks: formData.subtasks.filter(st => st.id !== id) }); };
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm p-0 md:p-4">
       <div className="bg-white dark:bg-slate-900 md:rounded-xl w-full max-w-4xl h-[100dvh] md:h-[90vh] shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200 border-none md:border border-slate-200 dark:border-slate-800">
-        
-        {/* Modal Header */}
         <div className="flex justify-between items-start p-4 md:p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/30">
            <div className="flex-1 mr-4">
               <input 
@@ -303,11 +293,8 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
            </div>
            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X size={24} /></button>
         </div>
-
-        {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-             {/* LEFT COLUMN */}
              <div className="md:col-span-2 space-y-6 order-2 md:order-1">
                 <div>
                    <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
@@ -320,7 +307,7 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
                       onChange={e => setFormData({...formData, description: e.target.value})}
                    />
                 </div>
-
+                {/* ... Rest of form ... */}
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
                    <div className="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-400 mb-3">
                       <Type size={16} /> YouTube Metadata
@@ -363,44 +350,21 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
                 </div>
              </div>
 
-             {/* RIGHT COLUMN */}
              <div className="space-y-6 order-1 md:order-2">
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Due Date</label>
-                   <div className="relative group">
-                       <input 
-                         type="date" 
-                         className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md h-10 px-3 pr-10 text-sm text-slate-600 dark:text-slate-300 outline-none appearance-none block min-w-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-10 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer" 
-                         value={formData.dueDate} 
-                         onChange={e => setFormData({...formData, dueDate: e.target.value})} 
-                       />
-                       <Calendar 
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" 
-                          size={16} 
-                        />
-                   </div>
+                   <input type="date" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md h-10 px-3 text-sm text-slate-600 dark:text-slate-300 outline-none" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} />
                 </div>
-
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 space-y-3">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2"><ImageIcon size={12}/> Thumbnails</label>
                    <input className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Thumbnail A Link..." value={formData.thumbnailALink || ''} onChange={e => setFormData({...formData, thumbnailALink: e.target.value})} />
                    <input className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Thumbnail B Link..." value={formData.thumbnailBLink || ''} onChange={e => setFormData({...formData, thumbnailBLink: e.target.value})} />
-                   <div className="flex gap-2">
-                     {formData.thumbnailALink && <a href={formData.thumbnailALink} target="_blank" className="flex-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-[10px] text-center py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800">View A</a>}
-                     {formData.thumbnailBLink && <a href={formData.thumbnailBLink} target="_blank" className="flex-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-[10px] text-center py-1 rounded hover:bg-slate-50 dark:hover:bg-slate-800">View B</a>}
-                   </div>
                 </div>
-
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 space-y-3">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase">Production Files</label>
                    <input className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Google Doc URL..." value={formData.scriptLink || ''} onChange={e => setFormData({...formData, scriptLink: e.target.value})} />
                    <input className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Footage Folder URL..." value={formData.footageLink || ''} onChange={e => setFormData({...formData, footageLink: e.target.value})} />
-                   <div className="flex gap-2 pt-1">
-                      {formData.scriptLink && <a href={formData.scriptLink} target="_blank" className="flex-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs text-center py-1.5 rounded font-bold hover:bg-indigo-200 dark:hover:bg-indigo-900/60">Open Script</a>}
-                      {formData.footageLink && <a href={formData.footageLink} target="_blank" className="flex-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs text-center py-1.5 rounded font-bold hover:bg-slate-300 dark:hover:bg-slate-600">Open Footage</a>}
-                   </div>
                 </div>
-
                 <div className="space-y-2">
                    <div onClick={() => setFormData({...formData, hasOutline: !formData.hasOutline})} className={cn("flex items-center gap-2 p-2 rounded-md border cursor-pointer text-xs font-medium transition-all", formData.hasOutline ? "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400" : "border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800")}>
                       {formData.hasOutline ? <CheckCircle2 size={14} /> : <Circle size={14} />} Outline Done
@@ -412,8 +376,6 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
              </div>
           </div>
         </div>
-
-        {/* Footer */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex justify-between items-center pb-8 md:pb-4">
             {task ? (
                <button onClick={() => { if(confirm("Delete task?")) onDelete(task.id); onClose(); }} className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={18} /></button>
@@ -428,13 +390,45 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete }: { task: Task | n
   );
 };
 
+// --- LOGIN SCREEN ---
+const LoginScreen = ({ onLogin, hasError }: { onLogin: () => void, hasError: boolean }) => {
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-950 p-8 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 max-w-sm w-full text-center">
+        <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-indigo-500/30">
+          <Clapperboard size={32} />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Welcome Back</h1>
+        <p className="text-slate-500 dark:text-slate-400 mb-8 text-sm">Sign in to access your production pipeline.</p>
+        
+        {hasError && (
+          <div className="mb-6 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-600 dark:text-red-300 flex items-center gap-2 text-left">
+            <WifiOff size={16} className="shrink-0" />
+            <span>Firebase could not connect. Check console for details.</span>
+          </div>
+        )}
+
+        <button 
+          onClick={onLogin}
+          disabled={hasError}
+          className={cn("w-full flex items-center justify-center gap-3 border font-bold py-3 px-4 rounded-xl transition-all", 
+             hasError ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed" : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
+          )}
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className={cn("w-5 h-5", hasError && "opacity-50")} alt="Google" />
+          Sign in with Google
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // --- MAIN APP ---
 const App = () => {
-  const [columns, setColumns] = useState<ColumnType[]>(() => {
-    const saved = localStorage.getItem('vidtracker-data-v5');
-    return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
-  });
+  const [user, setUser] = useState<{email: string; uid: string} | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [columns, setColumns] = useState<ColumnType[]>(DEFAULT_COLUMNS); 
+  const [authError, setAuthError] = useState(false);
 
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -450,9 +444,50 @@ const App = () => {
   const [viewMode, setViewMode] = useState<'creator' | 'editor'>('creator');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // LocalStorage & Theme Effects
-  useEffect(() => { localStorage.setItem('vidtracker-data-v5', JSON.stringify(columns)); }, [columns]);
-  
+  // 1. AUTH LISTENER (SAFE)
+  useEffect(() => {
+    if (!auth) {
+      console.error("Auth module missing");
+      setAuthError(true);
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (currentUser) {
+            setUser({ email: currentUser.email || 'User', uid: currentUser.uid });
+        } else {
+            setUser(null);
+        }
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.error("Auth listener failed", e);
+      setAuthError(true);
+      setLoading(false);
+    }
+  }, []);
+
+  // 2. FIRESTORE SYNC (Only runs if user is logged in)
+  useEffect(() => {
+    if (!user || !db) return;
+    
+    const unsub = onSnapshot(doc(db, "boards", "mainBoard"), (doc) => {
+       if (doc.exists()) {
+         setColumns(doc.data().columns);
+       } else {
+         setDoc(doc.ref, { columns: DEFAULT_COLUMNS });
+       }
+    }, (err) => {
+        console.warn("Firestore sync error:", err);
+    });
+
+    return () => unsub();
+  }, [user]);
+
+  // 3. THEME EFFECT
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
@@ -467,6 +502,32 @@ const App = () => {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
+
+  // HELPER: Save to Cloud
+  const saveBoardToCloud = async (newCols: ColumnType[]) => {
+     setColumns(newCols);
+     if (user && db) {
+       try {
+        await setDoc(doc(db, "boards", "mainBoard"), { columns: newCols });
+       } catch (e) {
+           console.error("Save failed:", e);
+       }
+     }
+  };
+
+  const handleLogin = async () => {
+    if (!auth) return;
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login failed", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (!auth) return;
+    await signOut(auth);
+  };
 
   const handleSaveTask = (updatedTask: Task) => {
     let newColumns = [...columns];
@@ -490,11 +551,19 @@ const App = () => {
     } else {
       newColumns = newColumns.map(col => col.id === 'Ideation' ? { ...col, tasks: [updatedTask, ...col.tasks] } : col);
     }
-    setColumns(newColumns);
+    saveBoardToCloud(newColumns);
   };
 
-  const handleDeleteTask = (taskId: string) => { setColumns(prev => prev.map(col => ({ ...col, tasks: col.tasks.filter(t => t.id !== taskId) }))); };
-  const handleToggleQuickCheck = (taskId: string, field: 'hasOutline' | 'hasScript') => { setColumns(prev => prev.map(col => ({ ...col, tasks: col.tasks.map(t => t.id === taskId ? { ...t, [field]: !t[field] } : t) }))); };
+  const handleDeleteTask = (taskId: string) => { 
+    const newCols = columns.map(col => ({ ...col, tasks: col.tasks.filter(t => t.id !== taskId) }));
+    saveBoardToCloud(newCols);
+  };
+  
+  const handleToggleQuickCheck = (taskId: string, field: 'hasOutline' | 'hasScript') => { 
+    const newCols = columns.map(col => ({ ...col, tasks: col.tasks.map(t => t.id === taskId ? { ...t, [field]: !t[field] } : t) }));
+    saveBoardToCloud(newCols);
+  };
+  
   const openNewTaskModal = () => { setEditingTask(null); setIsModalOpen(true); };
   const openEditTaskModal = (task: Task) => { setEditingTask(task); setIsModalOpen(true); };
 
@@ -537,11 +606,16 @@ const App = () => {
     const activeColumn = findColumn(activeId);
     const overColumn = findColumn(overId);
     if (!activeColumn || !overColumn) return;
-    if (activeColumn.id === overColumn.id) {
-        const oldIndex = activeColumn.tasks.findIndex(t => t.id === activeId);
-        const newIndex = activeColumn.tasks.findIndex(t => t.id === overId); 
-        if (oldIndex !== newIndex) setColumns(prev => prev.map(col => col.id === activeColumn.id ? { ...col, tasks: arrayMove(col.tasks, oldIndex, newIndex) } : col));
-    }
+  };
+  
+  const columnsRef = useRef(columns);
+  useEffect(() => { columnsRef.current = columns; }, [columns]);
+
+  const handleDragEndWithSave = (event: DragEndEvent) => {
+      handleDragEnd(event); 
+      setTimeout(() => {
+          saveBoardToCloud(columnsRef.current);
+      }, 50);
   };
 
   const filteredColumns = columns.filter(col => {
@@ -566,13 +640,21 @@ const App = () => {
     }),
   };
 
+  if (loading) {
+     return <div className="h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-900 text-slate-400">Loading VidTracker...</div>;
+  }
+
+  if (!user) {
+    return <LoginScreen onLogin={handleLogin} hasError={authError} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
       
-      {/* HEADER (Corrected for Responsive Layout) */}
+      {/* HEADER */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 md:px-6 md:py-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-50 shadow-sm transition-colors duration-200 gap-4">
         
-        {/* LOGO SECTION (Always Left) */}
+        {/* LOGO */}
         <div className="flex items-center justify-between w-full md:w-auto">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md">
@@ -580,20 +662,15 @@ const App = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">VidTracker</h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Pipeline v5.4</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Synced • {user.email}</p>
             </div>
           </div>
-          
-          {/* Mobile-Only Dark Toggle */}
-          <button 
-             onClick={() => setDarkMode(!darkMode)}
-             className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400"
-           >
+           <button onClick={() => setDarkMode(!darkMode)} className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400">
              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
            </button>
         </div>
 
-        {/* SEARCH SECTION (Center on PC, Full Width on Mobile) */}
+        {/* SEARCH */}
         <div className="w-full md:w-auto md:flex-1 md:max-w-md md:mx-6">
             <div className="relative group">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} />
@@ -606,14 +683,14 @@ const App = () => {
             </div>
         </div>
         
-        {/* ACTIONS SECTION (Right on PC, Scrollable Row on Mobile) */}
+        {/* ACTIONS */}
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto md:overflow-visible no-scrollbar pb-1 md:pb-0">
-           {/* Desktop Dark Toggle */}
-           <button 
-             onClick={() => setDarkMode(!darkMode)}
-             className="hidden md:block p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex-shrink-0"
-           >
+           <button onClick={() => setDarkMode(!darkMode)} className="hidden md:block p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex-shrink-0">
              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+           </button>
+
+           <button onClick={handleLogout} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-all flex-shrink-0" title="Sign Out">
+             <LogOut size={20} />
            </button>
 
            {viewMode === 'creator' && (
@@ -633,10 +710,10 @@ const App = () => {
         </div>
       </header>
 
-      {/* BOARD (Snap Scrolling with Dark Scrollbar Fix) */}
+      {/* BOARD */}
       <main className="flex-1 w-full flex flex-col overflow-hidden">
         <div className="flex-1 w-full overflow-x-auto snap-x snap-mandatory flex gap-4 p-4 md:p-6 md:snap-none dark:[color-scheme:dark]">
-            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragStart={(e) => setActiveTask(e.active.data.current?.task)}>
+            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragOver={handleDragOver} onDragEnd={handleDragEndWithSave} onDragStart={(e) => setActiveTask(e.active.data.current?.task)}>
                 {filteredColumns.map(col => (
                     <KanbanColumn key={col.id} column={col} onAddTask={openNewTaskModal} onEditTask={openEditTaskModal} onToggleQuickCheck={handleToggleQuickCheck} />
                 ))}
@@ -649,7 +726,7 @@ const App = () => {
       
       {/* FOOTER */}
       <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-2 px-6 text-xs text-slate-400 dark:text-slate-500 flex justify-between">
-         <span>VidTracker Mobile</span>
+         <span>VidTracker Cloud • {user.email}</span>
          <span className="flex items-center gap-1"><Users size={12}/> {viewMode}</span>
       </footer>
 
