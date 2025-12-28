@@ -317,7 +317,7 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
                 {isEditorPhase && (
                     <div className="bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-100 dark:border-amber-800">
                         <div className="flex items-center gap-2 text-sm font-bold text-amber-700 dark:text-amber-400 mb-2">
-                            <MessageSquare size={16} /> Revisions (Add to move to Editing)
+                            <MessageSquare size={16} /> Requested Revisions
                         </div>
                         <div className="space-y-2 mb-3">
                             {(formData.revisions || []).map(rev => (
@@ -493,24 +493,7 @@ const App = () => {
     const unsub = onSnapshot(doc(db, "boards", boardId), (docSnap) => {
        if (docSnap.exists()) {
          const data = docSnap.data();
-         let loadedColumns = data.columns || DEFAULT_COLUMNS;
-         
-         const hasReview = loadedColumns.some((c: ColumnType) => c.id === 'Review');
-         const hasPublished = loadedColumns.some((c: ColumnType) => c.id === 'Published');
-         
-         if (!hasReview || !hasPublished) {
-             if (!hasReview) {
-                 const uploadIndex = loadedColumns.findIndex((c: ColumnType) => c.id === 'Upload');
-                 const insertIdx = uploadIndex >= 0 ? uploadIndex : loadedColumns.length;
-                 loadedColumns.splice(insertIdx, 0, { id: 'Review', title: 'In Review', tasks: [] });
-             }
-             if (!hasPublished) {
-                 loadedColumns.push({ id: 'Published', title: 'Published', tasks: [] });
-             }
-             updateDoc(docSnap.ref, { columns: loadedColumns });
-         }
-
-         setColumns(loadedColumns);
+         setColumns(data.columns || DEFAULT_COLUMNS);
          setSettings({ 
              showPublished: data.settings?.showPublished ?? false,
              defaultSubtasks: data.settings?.defaultSubtasks ?? DEFAULT_SUBTASKS_LIST,
@@ -557,17 +540,15 @@ const App = () => {
     let newColumns = [...columns];
     const exists = newColumns.some(col => col.tasks.some(t => t.id === updatedTask.id));
     
-    const scriptDone = updatedTask.subtasks.find(s => s.title.includes("Script"))?.completed;
-    const recordDone = updatedTask.subtasks.find(s => s.title.includes("Record"))?.completed;
-    const newRevisions = updatedTask.revisions.length > (editingTask?.revisions?.length || 0);
-
+    // Task stays in current column unless manually moved
     let targetColId = null;
     const currentCol = newColumns.find(c => c.tasks.some(t => t.id === updatedTask.id));
     
-    if (scriptDone && (!currentCol || ['Ideation'].includes(currentCol.id))) targetColId = 'Scripting';
-    if (recordDone && (!currentCol || ['Scripting', 'Ideation'].includes(currentCol.id))) targetColId = 'Filming';
-    
+    // Review Workflow: If I add a revision to a card "In Review", kick it back to "Editing"
+    const newRevisions = updatedTask.revisions.length > (editingTask?.revisions?.length || 0);
     if (newRevisions && currentCol?.id === 'Review') {
+        // Keeping this one specific logic for user convenience (Review -> Editing loop)
+        // If you want 100% manual, remove these 3 lines.
         targetColId = 'Editing';
     }
 
@@ -578,7 +559,9 @@ const App = () => {
          if (targetColId && col.id === targetColId) return { ...col, tasks: [...col.tasks, updatedTask] };
          return col;
       });
-    } else { newColumns = newColumns.map(col => col.id === 'Ideation' ? { ...col, tasks: [updatedTask, ...col.tasks] } : col); }
+    } else { 
+        newColumns = newColumns.map(col => col.id === 'Ideation' ? { ...col, tasks: [updatedTask, ...col.tasks] } : col); 
+    }
     saveBoardToCloud(newColumns);
   };
   
