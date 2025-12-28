@@ -85,7 +85,7 @@ type SettingsData = {
 };
 
 // --- CONSTANTS ---
-const DEFAULT_SUBTASKS_LIST = ["Finalize Script", "Create Thumbnails", "Create Titles", "Create Description", "Record Video", "Trim/Edit Draft", "Publish To YouTube"];
+const DEFAULT_SUBTASKS_LIST = ["📝 Finalize Script", "🎨 Create Thumbnails", "🎬 Create Titles", "📄 Create Description", "🎥 Record Video", "✂️ Trim/Edit Draft", "🚀 Publish To YouTube"];
 
 // NEW WORKFLOW COLUMNS
 const DEFAULT_COLUMNS: ColumnType[] = [
@@ -132,7 +132,6 @@ const SortableTaskCard = ({ task, onClick, onToggleQuickCheck }: { task: Task; o
 const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { column: ColumnType, onAddTask: () => void, onEditTask: (t: Task) => void, onToggleQuickCheck: (id: string, field: 'hasOutline' | 'hasScript') => void }) => {
   const { setNodeRef } = useSortable({ id: column.id, data: { type: 'Column', column } });
   return (
-    // MODIFIED: Changed from fixed 320px to flexible width on Desktop (xl:flex-1)
     <div className="flex flex-col min-w-[280px] xl:min-w-0 xl:flex-1 h-full snap-center shrink-0">
       <div className="flex items-center justify-between mb-4 px-2">
         <div className="flex items-center gap-2"><h2 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide">{column.title}</h2><span className="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{column.tasks.length}</span></div>
@@ -340,9 +339,23 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
                 {!isEditorPhase && (
                     <div>
                         <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-3"><CheckSquare size={16} /> Production Checklist</div>
+                        {/* COMPACT GRID LAYOUT */}
                         <div className="space-y-2 mb-3 bg-slate-50/50 dark:bg-slate-800/30 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                            {formData.subtasks.map(st => (<div key={st.id} className="group flex items-center gap-3 p-2 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm rounded-md transition-all"><button onClick={() => toggleSubtask(st.id)} className={cn("w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0", st.completed ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 dark:border-slate-600 hover:border-indigo-400 bg-white dark:bg-slate-950")}>{st.completed && <CheckCircle2 size={12} />}</button><span className={cn("flex-1 text-sm font-medium", st.completed ? "text-slate-400 line-through" : "text-slate-700 dark:text-slate-300")}>{st.title}</span><button onClick={() => deleteSubtask(st.id)} className="opacity-100 md:opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button></div>))}
-                            <div className="flex items-center gap-2 pt-2"><Plus size={16} className="text-slate-400" /><input className="flex-1 text-sm outline-none placeholder:text-slate-400 bg-transparent text-slate-700 dark:text-slate-300" placeholder="Add a step..." value={newSubtask} onChange={e => setNewSubtask(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSubtask()} /></div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                                {formData.subtasks.map(st => (
+                                    <div key={st.id} className="group flex items-center gap-2 p-1 hover:bg-white/50 dark:hover:bg-slate-700/50 rounded transition-all cursor-pointer" onClick={() => toggleSubtask(st.id)}>
+                                        <div className={cn("w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0", st.completed ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950")}>
+                                            {st.completed && <CheckCircle2 size={10} />}
+                                        </div>
+                                        <span className={cn("flex-1 text-xs font-medium truncate", st.completed ? "text-slate-400 line-through" : "text-slate-700 dark:text-slate-300")}>{st.title}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); deleteSubtask(st.id); }} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500"><Trash2 size={12} /></button>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-700 mt-2">
+                                <Plus size={14} className="text-slate-400" />
+                                <input className="flex-1 text-xs outline-none placeholder:text-slate-400 bg-transparent text-slate-700 dark:text-slate-300" placeholder="Add a step..." value={newSubtask} onChange={e => setNewSubtask(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSubtask()} />
+                            </div>
                         </div>
                     </div>
                 )}
@@ -371,8 +384,8 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
                 {/* ASSETS - Highlighting Changes based on phase */}
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 space-y-3">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase">Production Files</label>
-                   <input className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Google Doc URL..." value={formData.scriptLink || ''} onChange={e => setFormData({...formData, scriptLink: e.target.value})} />
-                   <input className={cn("w-full bg-white dark:bg-slate-950 border rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none transition-all", isEditorPhase ? "border-green-400 ring-1 ring-green-400/20" : "border-slate-200 dark:border-slate-700")} placeholder="Footage Folder URL..." value={formData.footageLink || ''} onChange={e => setFormData({...formData, footageLink: e.target.value})} />
+                   <input className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Link to Script..." value={formData.scriptLink || ''} onChange={e => setFormData({...formData, scriptLink: e.target.value})} />
+                   <input className={cn("w-full bg-white dark:bg-slate-950 border rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none transition-all", isEditorPhase ? "border-green-400 ring-1 ring-green-400/20" : "border-slate-200 dark:border-slate-700")} placeholder="Link to Raw Footage..." value={formData.footageLink || ''} onChange={e => setFormData({...formData, footageLink: e.target.value})} />
                    
                    {/* DRAFT LINK - Only relevant for editor */}
                    {isEditorPhase && (
@@ -474,7 +487,7 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. FIRESTORE SYNC (With Smart Migration)
+  // 2. FIRESTORE SYNC
   useEffect(() => {
     if (!user || !db || !boardId) return;
     const unsub = onSnapshot(doc(db, "boards", boardId), (docSnap) => {
@@ -544,8 +557,8 @@ const App = () => {
     let newColumns = [...columns];
     const exists = newColumns.some(col => col.tasks.some(t => t.id === updatedTask.id));
     
-    const scriptDone = updatedTask.subtasks.find(s => s.title === "Finalize Script")?.completed;
-    const recordDone = updatedTask.subtasks.find(s => s.title === "Record Video")?.completed;
+    const scriptDone = updatedTask.subtasks.find(s => s.title.includes("Script"))?.completed;
+    const recordDone = updatedTask.subtasks.find(s => s.title.includes("Record"))?.completed;
     const newRevisions = updatedTask.revisions.length > (editingTask?.revisions?.length || 0);
 
     let targetColId = null;
@@ -600,7 +613,7 @@ const App = () => {
   const handleDragEndWithSave = (event: DragEndEvent) => { handleDragEnd(event); setTimeout(() => { saveBoardToCloud(columnsRef.current); }, 50); };
   
   const filteredColumns = columns.filter(col => {
-    if (viewMode === 'editor') return ['Editing', 'Review', 'Upload'].includes(col.id);
+    if (viewMode === 'editor') return ['Editing', 'Review', 'Upload', 'Published'].includes(col.id);
     if (!settings.showPublished && col.id === 'Published') return false;
     return true; 
   }).map(col => ({ ...col, tasks: col.tasks.filter(t => { if (!searchQuery) return true; const q = searchQuery.toLowerCase(); return t.title.toLowerCase().includes(q) || t.tags.some(tag => tag.toLowerCase().includes(q)); }) }));
