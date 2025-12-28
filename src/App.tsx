@@ -26,7 +26,7 @@ import {
   Layout, Clapperboard, Shield, Users, CheckCircle2, Circle, Plus, X, Trash2, 
   Calendar, Tag, AlignLeft, CheckSquare, Search, Image as ImageIcon, Type, 
   Sun, Moon, LogIn, LogOut, WifiOff, Settings, UserPlus, FileVideo, MessageSquare,
-  Eye, EyeOff, ListChecks, PlayCircle
+  Eye, EyeOff, ListChecks, PlayCircle, AlertCircle, Clock
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -35,6 +35,9 @@ import { twMerge } from 'tailwind-merge';
 import { db, auth, googleProvider } from './firebase';
 import { doc, onSnapshot, setDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs } from 'firebase/firestore';
 import { signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth';
+
+// --- CONFIG ---
+const DEV_MODE = true; // Set to false for production
 
 // --- UTILS ---
 function cn(...inputs: ClassValue[]) {
@@ -47,12 +50,12 @@ function generateId() {
 
 function getTagColor(tag: string) {
   const colors = [
-    "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
-    "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
-    "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800",
-    "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800",
-    "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800",
-    "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800",
+    "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
+    "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800",
+    "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800",
+    "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800",
+    "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800",
+    "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800",
   ];
   let hash = 0;
   for (let i = 0; i < tag.length; i++) {
@@ -87,7 +90,6 @@ type SettingsData = {
 // --- CONSTANTS ---
 const DEFAULT_SUBTASKS_LIST = ["📝 Finalize Script", "🎨 Create Thumbnails", "🎬 Create Titles", "📄 Create Description", "🎥 Record Video", "✂️ Trim/Edit Draft", "🚀 Publish To YouTube"];
 
-// NEW WORKFLOW COLUMNS
 const DEFAULT_COLUMNS: ColumnType[] = [
   { id: 'Ideation', title: 'Ideation', tasks: [] },
   { id: 'Scripting', title: 'Scripting', tasks: [] },
@@ -103,28 +105,65 @@ const DEFAULT_COLUMNS: ColumnType[] = [
 const SortableTaskCard = ({ task, onClick, onToggleQuickCheck }: { task: Task; onClick: (t: Task) => void, onToggleQuickCheck: (id: string, field: 'hasOutline' | 'hasScript') => void }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id, data: { type: 'Task', task } });
   const style = { transform: CSS.Translate.toString(transform), transition };
-  if (isDragging) return <div ref={setNodeRef} style={style} className="bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-500 opacity-40 h-[220px] rounded-xl" />;
+  
+  if (isDragging) return <div ref={setNodeRef} style={style} className="bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-500 opacity-40 h-[200px] rounded-xl" />;
   
   const handleQuickCheck = (e: React.MouseEvent, field: 'hasOutline' | 'hasScript') => { e.stopPropagation(); onToggleQuickCheck(task.id, field); };
   
   const openRevisions = task.revisions ? task.revisions.filter(r => !r.completed).length : 0;
+  const completedSubtasks = task.subtasks.filter(t => t.completed).length;
+  const totalSubtasks = task.subtasks.length;
+  const progressPercent = totalSubtasks > 0 ? (completedSubtasks / totalSubtasks) * 100 : 0;
+  
+  // Due Soon Logic (within 3 days)
+  const isDueSoon = task.dueDate && new Date(task.dueDate) > new Date() && (new Date(task.dueDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24) <= 3;
+  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date();
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={() => onClick(task)} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing relative touch-manipulation">
-      <div className="flex justify-between items-start mb-2"><div className="flex flex-wrap gap-1">{task.tags.length > 0 ? task.tags.map(tag => (<span key={tag} className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wide border", getTagColor(tag))}>{tag}</span>)) : <span className="text-[10px] text-slate-300 dark:text-slate-600 font-medium">NO TAGS</span>}</div></div>
-      <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base mb-3 leading-snug">{task.title}</h3>
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onClick={() => onClick(task)} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing relative touch-manipulation flex flex-col gap-3">
+      
+      {/* Header: Tags & Priority */}
+      <div className="flex justify-between items-start">
+          <div className="flex flex-wrap gap-1">
+            {task.tags.length > 0 ? task.tags.map(tag => (<span key={tag} className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wide border", getTagColor(tag))}>{tag}</span>)) : null}
+          </div>
+          {isOverdue ? (
+             <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full border border-red-100 dark:border-red-800"><AlertCircle size={10}/> OVERDUE</span>
+          ) : isDueSoon ? (
+             <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-800"><Clock size={10}/> DUE SOON</span>
+          ) : null}
+      </div>
+
+      <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm leading-snug">{task.title}</h3>
       
       {openRevisions > 0 && (
-        <div className="mb-3 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-1.5 rounded border border-amber-100 dark:border-amber-800 font-bold">
-            <MessageSquare size={12} className="fill-amber-600 dark:fill-amber-400" /> {openRevisions} Revision{openRevisions > 1 ? 's' : ''} Requested
+        <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-1.5 rounded border border-amber-100 dark:border-amber-800 font-bold">
+            <MessageSquare size={12} className="fill-amber-600 dark:fill-amber-400" /> {openRevisions} Revision{openRevisions > 1 ? 's' : ''} Needed
         </div>
       )}
 
-      <div className="space-y-1.5 mb-4">
-        <div onClick={(e) => handleQuickCheck(e, 'hasOutline')} className={cn("flex items-center gap-2 text-xs font-medium p-1.5 rounded-md transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700", task.hasOutline ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")}>{task.hasOutline ? <CheckCircle2 size={12} /> : <Circle size={12} />} Outline</div>
-        <div onClick={(e) => handleQuickCheck(e, 'hasScript')} className={cn("flex items-center gap-2 text-xs font-medium p-1.5 rounded-md transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700", task.hasScript ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")}>{task.hasScript ? <CheckCircle2 size={12} /> : <Circle size={12} />} Script Draft</div>
+      {/* Quick Actions (Outline/Script) */}
+      <div className="flex gap-2">
+        <div onClick={(e) => handleQuickCheck(e, 'hasOutline')} className={cn("flex-1 flex items-center justify-center gap-1.5 text-[10px] font-bold py-1 px-2 rounded transition-colors cursor-pointer border", task.hasOutline ? "text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800" : "text-slate-400 border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700")}>{task.hasOutline ? <CheckCircle2 size={10} /> : <Circle size={10} />} Outline</div>
+        <div onClick={(e) => handleQuickCheck(e, 'hasScript')} className={cn("flex-1 flex items-center justify-center gap-1.5 text-[10px] font-bold py-1 px-2 rounded transition-colors cursor-pointer border", task.hasScript ? "text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800" : "text-slate-400 border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700")}>{task.hasScript ? <CheckCircle2 size={10} /> : <Circle size={10} />} Script</div>
       </div>
-      <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-700 pt-3">{task.dueDate ? (<div className={cn("flex items-center gap-1.5 text-xs font-medium", new Date(task.dueDate) < new Date() ? "text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400")}><Calendar size={12} className={new Date(task.dueDate) < new Date() ? "text-red-500 dark:text-red-400" : "text-indigo-500 dark:text-indigo-400"}/> Due {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>) : <span className="text-[10px] text-slate-300 dark:text-slate-600">No Due Date</span>}<div className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500"><CheckSquare size={12} /> {task.subtasks.filter(t => t.completed).length}/{task.subtasks.length}</div></div>
+
+      {/* Footer: Date & Progress Bar */}
+      <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+          <div className="flex items-center justify-between mb-1.5">
+             {task.dueDate ? (
+                 <div className={cn("flex items-center gap-1.5 text-xs font-medium", isOverdue ? "text-red-500" : "text-slate-400 dark:text-slate-500")}>
+                    <Calendar size={12}/> {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                 </div>
+             ) : <span className="text-[10px] text-slate-300">No Date</span>}
+             {totalSubtasks > 0 && <span className="text-[10px] font-bold text-slate-400">{Math.round(progressPercent)}%</span>}
+          </div>
+          {totalSubtasks > 0 && (
+             <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                 <div className="h-full bg-indigo-500 dark:bg-indigo-400 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+             </div>
+          )}
+      </div>
     </div>
   );
 };
@@ -137,7 +176,7 @@ const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { c
         <div className="flex items-center gap-2"><h2 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-wide">{column.title}</h2><span className="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{column.tasks.length}</span></div>
         {column.id === 'Ideation' && (<button onClick={onAddTask} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors text-slate-500 dark:text-slate-400"><Plus size={16} /></button>)}
       </div>
-      <div ref={setNodeRef} className="flex-1 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl p-3 border border-slate-200/50 dark:border-slate-700/50 flex flex-col gap-3 overflow-y-auto">
+      <div ref={setNodeRef} className="flex-1 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl p-3 border border-slate-200/50 dark:border-slate-700/50 flex flex-col gap-3 overflow-y-auto scrollbar-hide">
         <SortableContext items={column.tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>{column.tasks.map((task) => (<SortableTaskCard key={task.id} task={task} onClick={onEditTask} onToggleQuickCheck={onToggleQuickCheck} />))}</SortableContext>
         {column.tasks.length === 0 && (<div className="h-24 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-center text-slate-400 dark:text-slate-600 text-xs font-medium">Empty</div>)}
       </div>
@@ -145,7 +184,7 @@ const KanbanColumn = ({ column, onAddTask, onEditTask, onToggleQuickCheck }: { c
   );
 };
 
-const SettingsModal = ({ isOpen, onClose, user, boardId, settings, onUpdateSettings }: { isOpen: boolean, onClose: () => void, user: SimpleUser | null, boardId: string | null, settings: SettingsData, onUpdateSettings: (s: Partial<SettingsData>) => void }) => {
+const SettingsModal = ({ isOpen, onClose, user, boardId, settings, onUpdateSettings, darkMode, setDarkMode, onLogout }: { isOpen: boolean, onClose: () => void, user: SimpleUser | null, boardId: string | null, settings: SettingsData, onUpdateSettings: (s: Partial<SettingsData>) => void, darkMode: boolean, setDarkMode: (v: boolean) => void, onLogout: () => void }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'team' | 'workflow'>('general');
   const [emailInput, setEmailInput] = useState('');
   const [taskInput, setTaskInput] = useState('');
@@ -177,9 +216,9 @@ const SettingsModal = ({ isOpen, onClose, user, boardId, settings, onUpdateSetti
         
         {/* Sidebar */}
         <div className="w-48 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-2">
-            <h2 className="text-sm font-bold text-slate-400 uppercase mb-2">Settings</h2>
+            <h2 className="text-xs font-bold text-slate-400 uppercase mb-2">Settings</h2>
             <button onClick={() => setActiveTab('general')} className={cn("text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2", activeTab === 'general' ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900")}>
-                <Eye size={16}/> Visibility
+                <Settings size={16}/> General
             </button>
             <button onClick={() => setActiveTab('team')} className={cn("text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2", activeTab === 'team' ? "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900")}>
                 <Users size={16}/> Team Access
@@ -194,12 +233,23 @@ const SettingsModal = ({ isOpen, onClose, user, boardId, settings, onUpdateSetti
             <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X size={20}/></button>
             
             {activeTab === 'general' && (
-                <div>
-                    <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-6">Board Visibility</h2>
+                <div className="space-y-6">
+                    <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-6">General Settings</h2>
+                    
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <div>
+                            <h3 className="font-bold text-slate-700 dark:text-slate-200">Dark Mode</h3>
+                            <p className="text-xs text-slate-500">Toggle application theme</p>
+                        </div>
+                        <button onClick={() => setDarkMode(!darkMode)} className="p-2 bg-white dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
+                            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+                        </button>
+                    </div>
+
                     <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
                         <div>
                             <h3 className="font-bold text-slate-700 dark:text-slate-200">Show Published Column</h3>
-                            <p className="text-xs text-slate-500">Keep completed videos visible on the board history.</p>
+                            <p className="text-xs text-slate-500">Keep completed videos visible.</p>
                         </div>
                         <button 
                            onClick={() => onUpdateSettings({ showPublished: !settings.showPublished })}
@@ -207,6 +257,10 @@ const SettingsModal = ({ isOpen, onClose, user, boardId, settings, onUpdateSetti
                         >
                             <div className={cn("w-4 h-4 bg-white rounded-full absolute top-1 transition-all", settings.showPublished ? "left-7" : "left-1")} />
                         </button>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+                         <button onClick={onLogout} className="text-red-500 hover:text-red-700 font-bold text-sm flex items-center gap-2"><LogOut size={16}/> Sign Out</button>
                     </div>
                 </div>
             )}
@@ -255,7 +309,6 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
   const [newSubtask, setNewSubtask] = useState('');
   const [newRevision, setNewRevision] = useState('');
 
-  // Is this the "Creator Phase" or "Editor Phase"?
   const isEditorPhase = ['Editing', 'Review', 'Upload', 'Published'].includes(columnId || '');
 
   useEffect(() => {
@@ -280,7 +333,6 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
   const toggleSubtask = (id: string) => { setFormData({ ...formData, subtasks: formData.subtasks.map(st => st.id === id ? { ...st, completed: !st.completed } : st) }); };
   const deleteSubtask = (id: string) => { setFormData({ ...formData, subtasks: formData.subtasks.filter(st => st.id !== id) }); };
 
-  // Revision Logic
   const addRevision = () => { if(newRevision.trim()) { setFormData({ ...formData, revisions: [...(formData.revisions || []), { id: generateId(), text: newRevision.trim(), completed: false }] }); setNewRevision(''); } };
   const toggleRevision = (id: string) => { setFormData({ ...formData, revisions: formData.revisions.map(r => r.id === id ? { ...r, completed: !r.completed } : r) }); };
   const deleteRevision = (id: string) => { setFormData({ ...formData, revisions: formData.revisions.filter(r => r.id !== id) }); };
@@ -292,12 +344,12 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
            <div className="flex-1 mr-4">
               <input 
                 autoFocus
-                className="w-full text-xl md:text-2xl font-bold text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 outline-none bg-transparent"
+                className="w-full text-xl md:text-2xl font-bold text-slate-800 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 outline-none bg-transparent mb-2"
                 placeholder="Project Title..."
                 value={formData.title}
                 onChange={e => setFormData({...formData, title: e.target.value})}
               />
-              <div className="flex items-center gap-4 mt-2 overflow-x-auto no-scrollbar">
+              <div className="flex items-center gap-4 overflow-x-auto no-scrollbar">
                  <div className="flex items-center gap-2 whitespace-nowrap">
                     <Tag size={12} className="text-slate-400" />
                     {formData.tags.map(tag => (<span key={tag} className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 border", getTagColor(tag))}>{tag} <button onClick={() => setFormData({...formData, tags: formData.tags.filter(t => t !== tag)})}>&times;</button></span>))}
@@ -312,6 +364,12 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
              
              {/* LEFT COLUMN */}
              <div className="md:col-span-2 space-y-6 order-2 md:order-1">
+
+                {/* Notes - Moved Up */}
+                <div>
+                   <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-2"><AlignLeft size={16} /> Notes & Ideas</div>
+                   <textarea className="w-full min-h-[100px] text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none" placeholder="Brainstorming, hooks, and rough notes..." value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+                </div>
                 
                 {/* --- REVISION CHECKLIST (Only in Editor Phase) --- */}
                 {isEditorPhase && (
@@ -335,11 +393,10 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
                     </div>
                 )}
 
-                {/* --- STANDARD CHECKLIST (Only in Creator Phase or if expanded) --- */}
+                {/* --- STANDARD CHECKLIST --- */}
                 {!isEditorPhase && (
                     <div>
                         <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-3"><CheckSquare size={16} /> Production Checklist</div>
-                        {/* COMPACT GRID LAYOUT */}
                         <div className="space-y-2 mb-3 bg-slate-50/50 dark:bg-slate-800/30 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
                                 {formData.subtasks.map(st => (
@@ -360,14 +417,19 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
                     </div>
                 )}
 
-                <div>
-                   <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-2"><AlignLeft size={16} /> Notes & Ideas</div>
-                   <textarea className="w-full min-h-[100px] text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none" placeholder="Brainstorming, hooks, and rough notes..." value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
-                </div>
-                
-                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-                   <div className="flex items-center gap-2 text-sm font-bold text-red-600 dark:text-red-400 mb-3"><Type size={16} /> YouTube Metadata</div>
-                   <div className="space-y-3"><input className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500/20 outline-none" placeholder="Final YouTube Title..." value={formData.youtubeTitle || ''} onChange={e => setFormData({...formData, youtubeTitle: e.target.value})} /><textarea className="w-full min-h-[80px] text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none" placeholder="YouTube Description (Links, timestamps, etc)..." value={formData.youtubeDescription || ''} onChange={e => setFormData({...formData, youtubeDescription: e.target.value})} /></div>
+                {/* Posting Details - Redesigned */}
+                <div className="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-xl border border-slate-200 dark:border-slate-800 relative group">
+                   <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-4"><Type size={16} /> Posting Details</div>
+                   <div className="space-y-4">
+                      <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Final Title</label>
+                          <input className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-200 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" placeholder="Enter the optimized YouTube title..." value={formData.youtubeTitle || ''} onChange={e => setFormData({...formData, youtubeTitle: e.target.value})} />
+                      </div>
+                      <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Description & Timestamps</label>
+                          <textarea className="w-full min-h-[120px] text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none" placeholder="Paste your description, links, and chapters here..." value={formData.youtubeDescription || ''} onChange={e => setFormData({...formData, youtubeDescription: e.target.value})} />
+                      </div>
+                   </div>
                 </div>
              </div>
 
@@ -376,18 +438,16 @@ const TaskModal = ({ task, isOpen, onClose, onSave, onDelete, columnId }: { task
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Due Date</label>
                    <div className="relative group">
-                       <input type="date" className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md h-10 px-3 pr-10 text-sm text-slate-600 dark:text-slate-300 outline-none appearance-none block min-w-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-10 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} />
-                       <Calendar className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:text-indigo-500 transition-colors" size={16} />
+                       <input type="date" className="w-full bg-transparent font-medium text-sm text-slate-700 dark:text-slate-200 outline-none h-8 cursor-pointer" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} />
                    </div>
                 </div>
 
-                {/* ASSETS - Highlighting Changes based on phase */}
+                {/* ASSETS */}
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700 space-y-3">
                    <label className="block text-[10px] font-bold text-slate-400 uppercase">Production Files</label>
                    <input className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Link to Script..." value={formData.scriptLink || ''} onChange={e => setFormData({...formData, scriptLink: e.target.value})} />
                    <input className={cn("w-full bg-white dark:bg-slate-950 border rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none transition-all", isEditorPhase ? "border-green-400 ring-1 ring-green-400/20" : "border-slate-200 dark:border-slate-700")} placeholder="Link to Raw Footage..." value={formData.footageLink || ''} onChange={e => setFormData({...formData, footageLink: e.target.value})} />
                    
-                   {/* DRAFT LINK - Only relevant for editor */}
                    {isEditorPhase && (
                        <input className="w-full bg-white dark:bg-slate-950 border border-indigo-300 dark:border-indigo-700 rounded-md p-1.5 text-xs text-slate-600 dark:text-slate-300 outline-none" placeholder="Draft Video Link (Frame.io / Drive)..." value={formData.draftLink || ''} onChange={e => setFormData({...formData, draftLink: e.target.value})} />
                    )}
@@ -463,8 +523,16 @@ const App = () => {
   const [viewMode, setViewMode] = useState<'creator' | 'editor'>('creator');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 1. AUTH LISTENER
+  // 1. AUTH LISTENER & DEV MODE
   useEffect(() => {
+    if (DEV_MODE) {
+        // MOCK USER FOR DEV
+        setUser({ email: 'dev@admin.com', uid: 'dev-mode-uid' });
+        setBoardId('dev-mode-uid');
+        setLoading(false);
+        return;
+    }
+
     if (!auth) { setAuthError(true); setLoading(false); return; }
     getRedirectResult(auth).catch(() => setAuthError(true));
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -540,15 +608,10 @@ const App = () => {
     let newColumns = [...columns];
     const exists = newColumns.some(col => col.tasks.some(t => t.id === updatedTask.id));
     
-    // Task stays in current column unless manually moved
     let targetColId = null;
     const currentCol = newColumns.find(c => c.tasks.some(t => t.id === updatedTask.id));
-    
-    // Review Workflow: If I add a revision to a card "In Review", kick it back to "Editing"
     const newRevisions = updatedTask.revisions.length > (editingTask?.revisions?.length || 0);
     if (newRevisions && currentCol?.id === 'Review') {
-        // Keeping this one specific logic for user convenience (Review -> Editing loop)
-        // If you want 100% manual, remove these 3 lines.
         targetColId = 'Editing';
     }
 
@@ -611,12 +674,10 @@ const App = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 py-3 md:px-6 md:py-4 flex flex-col md:flex-row md:items-center justify-between sticky top-0 z-50 shadow-sm transition-colors duration-200 gap-4">
-        <div className="flex items-center justify-between w-full md:w-auto"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md"><Clapperboard size={24} /></div><div><h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">VidTracker</h1><p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Synced • {user.email}</p></div></div><button onClick={() => setDarkMode(!darkMode)} className="md:hidden p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button></div>
+        <div className="flex items-center justify-between w-full md:w-auto"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white shadow-md"><Clapperboard size={24} /></div><div><h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">VidTracker</h1><p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Synced • {user.email}</p></div></div></div>
         <div className="w-full md:w-auto md:flex-1 md:max-w-md md:mx-6"><div className="relative group"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={16} /><input className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-200 transition-all" placeholder="Search videos..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div></div>
         <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto md:overflow-visible no-scrollbar pb-1 md:pb-0">
-           {boardId === user.uid && (<button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 transition-all flex-shrink-0" title="Settings"><Settings size={20} /></button>)}
-           <button onClick={() => setDarkMode(!darkMode)} className="hidden md:block p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex-shrink-0">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
-           <button onClick={handleLogout} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-all flex-shrink-0" title="Sign Out"><LogOut size={20} /></button>
+           <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 transition-all flex-shrink-0" title="Settings"><Settings size={20} /></button>
            {viewMode === 'creator' && (<button onClick={openNewTaskModal} className="flex-shrink-0 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md shadow-indigo-200 dark:shadow-none transition-all whitespace-nowrap"><Plus size={16} /> <span className="hidden sm:inline">New Project</span><span className="sm:hidden">New</span></button>)}
             <div className="flex-shrink-0 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
                 <button onClick={() => setViewMode('creator')} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap", viewMode === 'creator' ? "bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}><Layout size={16} /> <span className="hidden sm:inline">Creator</span></button>
@@ -632,7 +693,7 @@ const App = () => {
          <span className="flex items-center gap-1"><Users size={12}/> {viewMode}</span>
       </footer>
       <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} task={editingTask} onSave={handleSaveTask} onDelete={handleDeleteTask} columnId={editingTaskColumnId} />
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} boardId={boardId} settings={settings} onUpdateSettings={(s) => saveBoardToCloud(columns, { ...settings, ...s })} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} user={user} boardId={boardId} settings={settings} onUpdateSettings={(s) => saveBoardToCloud(columns, { ...settings, ...s })} darkMode={darkMode} setDarkMode={setDarkMode} onLogout={handleLogout} />
     </div>
   );
 };
